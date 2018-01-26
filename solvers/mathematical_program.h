@@ -1008,6 +1008,13 @@ class MathematicalProgram {
    */
   Binding<Constraint> AddConstraint(const Binding<Constraint>& binding);
 
+  // Overload for non-registered types.
+  template <typename C>
+  auto AddConstraint(const Binding<C>& binding) {
+    AddConstraint(Binding<Constraint>(binding));
+    return binding;
+  }
+
   /**
    * Adds a generic constraint to the program.  This should
    * only be used if a more specific type of constraint is not
@@ -1908,21 +1915,28 @@ class MathematicalProgram {
 
   /**
    * Adds a Nonlinear Complementarity Constraint to the program.
+   * @param f1 the first function to be evaluated
+   * @param f2 the second function to be evaluated
+   * @param vars the (COMPLETE) list of variables
+   * @param numx1 the number of variables associated with the first function (the rest are for the second function)
    */
+  template <typename DerivedUB>
   Binding<NonlinearComplementarityConstraint> AddNonlinearComplementarityConstraint(
-        const EvaluatorBase& f1, const EvaluatorBase& f2,
-        const VariableRefList& x1, const VariableRefList& x2) {
-    auto i1 = VectorX<double>::Ones(f1.num_outputs());
-    auto i2 = VectorX<double>::Ones(f2.num_outputs());
-    double inf = std::numeric_limits<double>::infinity();
-    AddConstraint(make_shared<EvaluatorConstraint<>>(f1, 0 * i1, inf * i1), x1);
-    AddConstraint(make_shared<EvaluatorConstraint<>>(f2, 0 * i2, inf * i2), x2);
+        std::shared_ptr<EvaluatorBase> f1, std::shared_ptr<EvaluatorBase> f2,
+        const VectorXDecisionVariable& x1, const VectorXDecisionVariable& x2,
+        const Eigen::MatrixBase<DerivedUB>& tol) {
+    auto i1 = VectorX<double>::Ones(f1->num_outputs()).eval();
+    auto i2 = VectorX<double>::Ones(f2->num_outputs()).eval();
 
-    auto c = NonlinearComplementarityConstraint(f1, f2);
-    auto x;
-    x << x1, x2;
+    // Adding auxilary constraints for bounding the complementarity constraint
+    AddConstraint(std::shared_ptr<EvaluatorConstraint<>>(new EvaluatorConstraint<>(
+      f1, (0 * i1).eval(), (tol * i1).eval())), x1);
+    AddConstraint(std::shared_ptr<EvaluatorConstraint<>>(new EvaluatorConstraint<>(
+      f2, (0 * i2).eval(), (tol * i2).eval())), x2);
+    std::shared_ptr<NonlinearComplementarityConstraint> c(
+        new NonlinearComplementarityConstraint(f1, f2, tol));
 
-    AddConstraint(c, x); 
+    return AddConstraint(c, ConcatenateVariableRefList({x1, x2})); 
   }
 
   /**

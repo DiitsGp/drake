@@ -162,7 +162,7 @@ GTEST_TEST(CompliantMaterialTest, PropertyAccessors) {
   // NOTE: This alias is purely cosmetic; it allows the lambda functions below
   // to all fit on single lines.
   using Material = CompliantMaterial;
-  const Material defaults;
+  const Material defaults{};
   // Create a set of values that *cannot* be the hard-coded default values.
   const Material non_defaults = CalcNonDefaultMaterial();
 

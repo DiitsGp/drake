@@ -56,13 +56,38 @@ namespace drake {
 namespace solvers {
 namespace test {
 
+class EvalFunc1 : public EvaluatorBase {
+public:
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(EvalFunc1)
+  EvalFunc1() : EvaluatorBase(2, 2) {}
 
-GTEST_TEST(testAddVariable, testAddContinuousVariable5) {
-  // Adds a static-sized matrix of continuous variables.
-  MathematicalProgram prog;
-  auto x1 = prog.NewContinuousVariables(2, "x1");
-  auto x2 = prog.NewContinuousVariables(2, "x2");
-  prog.AddThatThing(...);
+protected:
+  void DoEval(const Eigen::Ref<const Eigen::VectorXd>& x,
+              Eigen::VectorXd& y) const override {
+  	y(0) = x(0)*x(0);
+  	y(1) = x(1)*x(1);
+  }
+  void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
+              AutoDiffVecXd& y) const override {
+  	y(0) = x(0)*x(0);
+  	y(1) = x(1)*x(1);
+  }
+};
+
+
+GTEST_TEST(testConstraint, testNLCC_Eval) {
+  const VectorXd ub = VectorXd::Constant(1, 25.0);
+  VectorXd x(4), x1(2), x2(2), y(1);
+  x1 << 1, 1;
+  x2 << 2, 2;
+  x << x1, x2;
+  auto f1 = std::make_shared<EvalFunc1>();
+  auto f2 = std::make_shared<EvalFunc1>();
+
+  NonlinearComplementarityConstraint nlcc(f1, f2, ub);
+  nlcc.Eval(x, y);
+  std::cout<<"The final output is: " << y << std::endl;
+  std::cout<<"The expected output is: " << 8;
 }
 
 

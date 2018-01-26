@@ -757,15 +757,17 @@ class LinearMatrixInequalityConstraint : public Constraint {
 class NonlinearComplementarityConstraint : public Constraint {
  public:
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(NonlinearComplementarityConstraint)
+  template<typename DerivedUB>
 
   NonlinearComplementarityConstraint(
-      const EvaluatorBase& f1, const EvaluatorBase& f2)
-      : Constraint(3*f1.num_outputs, 2*f1.num_outputs), f1_(f1), f2_(f2) {
+      std::shared_ptr<EvaluatorBase> f1, std::shared_ptr<EvaluatorBase> f2,
+      const Eigen::MatrixBase<DerivedUB>& tol)
+      : Constraint(3*f1->num_outputs(), 2*f1->num_outputs(), Eigen::VectorXd::Constant(1, 0.0), tol), f1_(f1), f2_(f2) {
         DRAKE_DEMAND(nf1() == nf2());
       }
 
-  int nf1() const { return f1.num_outputs(); }
-  int nf2() const { return f2.num_outputs(); }
+  int nf1() const { return f1_->num_outputs(); }
+  int nf2() const { return f2_->num_outputs(); }
 
   ~NonlinearComplementarityConstraint() override {}
  protected:
@@ -774,7 +776,10 @@ class NonlinearComplementarityConstraint : public Constraint {
 
   void DoEval(const Eigen::Ref<const AutoDiffVecXd>& x,
               AutoDiffVecXd& y) const override;
-}
+private:
+  std::shared_ptr<EvaluatorBase> f1_;
+  std::shared_ptr<EvaluatorBase> f2_;
+};
 
 }  // namespace solvers
 }  // namespace drake
