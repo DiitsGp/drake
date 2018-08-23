@@ -122,10 +122,11 @@ void CustomDirectTranscriptionConstraint::DoEval(
       RigidBodyTree<double>::GetVelocityToQDotMapping(kinsol);
 
   const AutoDiffVecXd qdot_minus_r = map_v_to_qdot * v_minus_r;
+  const AutoDiffVecXd qdot_plus_l = map_v_to_qdot * v_plus_l;
   // TODO(hongkai.dai): Project qdot_r to the constraint manifold (for example,
   // if q contains unit quaternion, and we need to project this backward Euler
   // integration on the unit quaternion manifold.)
-  y_pos = q_r - q_l - qdot_minus_r * (h);
+  y_pos = q_r - q_l - qdot_minus_r* (h);
 
   const auto M = tree_->massMatrix(kinsol);
 
@@ -237,7 +238,7 @@ ElasticContactImplicitDirectTranscription::ElasticContactImplicitDirectTranscrip
   for (int i = 0; i < N(); i++) {
     auto contact_implicit_cnstr = std::make_shared<ContactImplicitConstraint>(
       *tree_, *empty_tree_,
-      cic_kinematics_cache_with_v_helpers_[i], num_lambda_, compl_tol_);
+      cic_kinematics_cache_with_v_helpers_[i], num_lambda_, elasticity_, compl_tol_);
     const solvers::VectorXDecisionVariable contact_implicit_cnstr_vars = 
         contact_implicit_cnstr->CompositeEvalInput(
           q_vars_.col(i), v_vars_.col(i), lambda_vars_.col(i));

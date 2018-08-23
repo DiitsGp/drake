@@ -22,7 +22,7 @@ class ContactImplicitConstraint
   		const RigidBodyTree<double>& tree,
       const RigidBodyTree<double>& empty_tree,
   		std::shared_ptr<plants::KinematicsCacheWithVHelper<AutoDiffXd>>
-  			kinematics_cache_with_v_helper, int num_lambda, double tol);
+  			kinematics_cache_with_v_helper, int num_lambda, double elasticity, double tol);
 
   ~ContactImplicitConstraint() override {}
 
@@ -40,6 +40,7 @@ class ContactImplicitConstraint
     DRAKE_ASSERT(lambda.rows() == num_lambda_);
     Eigen::Matrix<drake::symbolic::Variable, Eigen::Dynamic, 1> x(num_vars(), 1);
     x << q, v, lambda;
+    //x << q, v;
     return x;
   }
 
@@ -56,6 +57,7 @@ class ContactImplicitConstraint
   const int num_velocities_;
   const int num_lambda_;
   const int num_contacts_;
+  const double elasticity_;
   const double tol_;
 
   std::shared_ptr<plants::KinematicsCacheWithVHelper<AutoDiffXd>>
@@ -87,9 +89,10 @@ class TimestepIntegrationConstraint
                      const Eigen::MatrixBase<DerivedLambda>& lambda) const {
     DRAKE_ASSERT(q.rows() == num_positions_);
     DRAKE_ASSERT(v.rows() == num_velocities_);
-    DRAKE_ASSERT(lambda.rows() == num_lambda_);
+    //DRAKE_ASSERT(lambda.rows() == num_lambda_);
     Eigen::Matrix<drake::symbolic::Variable, Eigen::Dynamic, 1> x(num_vars(), 1);
     x << q, v, lambda;
+    //x << q, v;
     return x;
   }
 

@@ -7,16 +7,19 @@ namespace drake {
 namespace systems {
 namespace trajectory_optimization {
 
-const bool debug = true;
+const bool debug = false;
 
 void CollisionStuff(
     const RigidBodyTree<double>& tree,
     const RigidBodyTree<double>& empty_tree,
     const VectorX<AutoDiffXd>& q,
+    const VectorX<AutoDiffXd>& v_minus,
     const MatrixX<AutoDiffXd>& lambda,
     int nx,
+    double elasticity,
     VectorX<AutoDiffXd>* phi_out,
     MatrixX<AutoDiffXd>* Jphi_out,
+    VectorX<AutoDiffXd>* lambda_out,
     MatrixX<double>* tensornormal_out) {
 
   auto kinsol = tree.doKinematics(q);
@@ -82,13 +85,24 @@ void CollisionStuff(
   *phi_out = math::initializeAutoDiffGivenGradientMatrix(
       phi, Jphi_x);
 
+  const MatrixX<AutoDiffXd> map_v_to_qdot =
+      RigidBodyTree<double>::GetVelocityToQDotMapping(kinsol);
+  const AutoDiffVecXd qd_minus = map_v_to_qdot * v_minus;
+  const auto M = tree.massMatrix(kinsol);
+  // this line is broken
+  const auto projected_mass = ((*Jphi_out) * M.inverse() * (*Jphi_out).transpose()).inverse();
+  *lambda_out = -(1+elasticity) * 
+                projected_mass *
+                (*Jphi_out) * qd_minus;
+
   if (debug) {
     using namespace std;
-    cout << "q: " << q.transpose() << endl;
-    cout << "phi: " << phi.transpose() << endl;
-    std::cerr << "contacts_B:\n" << contacts_B << std::endl;;
-    cout << "contacts_W:\n" << contacts_W << "\n---\n";
-    cout << "world_contacts_W:\n" << world_contacts_W << "\n---\n";
+    cout << "projected_mass" << M << endl;
+    cout << "lambda: " << lambda.transpose() << endl;
+    cout << "lambda_calc: " << (*lambda_out).transpose() << endl;
+    //std::cerr << "contacts_B:\n" << contacts_B << std::endl;;
+    //cout << "contacts_W:\n" << contacts_W << "\n---\n";
+    //cout << "world_contacts_W:\n" << world_contacts_W << "\n---\n";
   }
 }
 
@@ -96,7 +110,12 @@ ContactImplicitConstraint::ContactImplicitConstraint(
     const RigidBodyTree<double>& tree,
     const RigidBodyTree<double>& empty_tree,
     std::shared_ptr<plants::KinematicsCacheWithVHelper<AutoDiffXd>>
-        kinematics_cache_with_v_helper, int num_lambda, double tol)
+        kinematics_cache_with_v_helper, int num_lambda, double elasticity, double tol)
+/*
+ * Original:
+ * 2*num_lambda/3 + 1,
+ * tree.get_num_positions() + 2*tree.get_num_velocities() + num_lambda
+ */
     : Constraint(2*num_lambda/3 + 1, tree.get_num_positions() +
                   2*tree.get_num_velocities() + num_lambda,
         Eigen::MatrixXd::Zero(2*num_lambda/3 + 1, 1),
@@ -107,6 +126,7 @@ ContactImplicitConstraint::ContactImplicitConstraint(
       num_velocities_{2*tree.get_num_velocities()},
       num_lambda_{num_lambda},
       num_contacts_{num_lambda/3},
+      elasticity_{elasticity},
       tol_{tol},
       kinematics_cache_with_v_helper_{kinematics_cache_with_v_helper} {
     unused(num_contacts_);
@@ -142,10 +162,12 @@ void ContactImplicitConstraint::DoEval(
 
   VectorX<AutoDiffXd> phi;
   MatrixX<AutoDiffXd> Jphi;
+  VectorX<AutoDiffXd> lambda_calc;
   MatrixX<double> tensornormal;
   CollisionStuff(
-      *tree_, *empty_tree_, q, lambda, x.size(),
-      &phi, &Jphi, &tensornormal);
+      *tree_, *empty_tree_, q, v_minus,lambda,
+      x.size(), elasticity_,
+      &phi, &Jphi, &lambda_calc, &tensornormal);
 
   // Ensure that 
   // MatrixX<AutoDiffXd> autotensornormal(
@@ -228,10 +250,12 @@ void TimestepIntegrationConstraint::DoEval(
 
   VectorX<AutoDiffXd> phi;
   MatrixX<AutoDiffXd> Jphi;
+  VectorX<AutoDiffXd> lambda_calc;
   MatrixX<double> tensornormal;
   CollisionStuff(
-      *tree_, *empty_tree_, q, lambda, x.size(),
-      &phi, &Jphi, &tensornormal);
+      *tree_, *empty_tree_, q, v_minus, lambda,
+      x.size(), elasticity_,
+      &phi, &Jphi, &lambda_calc, &tensornormal);
 
   auto lambda_phi = tensornormal.cast<AutoDiffXd>().transpose()*lambda;
   auto dphi_delta = Jphi*qd_plus + elasticity_*Jphi*qd_minus;
