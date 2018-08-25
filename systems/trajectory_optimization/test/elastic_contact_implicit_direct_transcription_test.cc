@@ -29,7 +29,7 @@ ConstructContactImplicitBrickTree(bool is_empty) {
     parsers::urdf::AddModelInstanceFromUrdfFileToWorld(
         FindResourceOrThrow("drake/examples/contact_implicit_brick/contact_implicit_brick.urdf"),
         multibody::joints::kFixed, tree);
-    DRAKE_DEMAND(tree->get_num_positions() == 1);
+    DRAKE_DEMAND(tree->get_num_positions() == 6);
   }
 
   //RigidBody<double>* brick = tree->FindBody("contact_implicit_brick");
@@ -38,19 +38,21 @@ ConstructContactImplicitBrickTree(bool is_empty) {
 }
 
 void AddTrajectoryConstraints(ElasticContactImplicitDirectTranscription* traj_opt, const int num_time_samples,
-                              const double z_0, double z_f, const double z_f_margin,
-                              const double zdot_0_min, const double zdot_0_max) {
+                              Eigen::VectorXd q_0, Eigen::VectorXd q_f, Eigen::VectorXd q_f_margin,
+                              Eigen::VectorXd qdot_0_min, Eigen::VectorXd qdot_0_max) {
 
   (*traj_opt).SetSolverOption(
-      solvers::SnoptSolver::id(), "Print file", "/tmp/snopt.out");
+      solvers::SnoptSolver::id(), "Print file", "~/tmp/snopt.out");
 
   // Add a constraint on position 0 of the initial posture.
-  (*traj_opt).AddBoundingBoxConstraint(z_0, z_0,
-                                    (*traj_opt).GeneralizedPositions()(0, 0));
+  const solvers::MatrixXDecisionVariable& q_vars = (*traj_opt).GeneralizedPositions();
+  (*traj_opt).AddBoundingBoxConstraint(q_0, q_0, q_vars.col(0));
 
   // Add a constraint on velocity 0 of the initial posture.
-  (*traj_opt).AddBoundingBoxConstraint(zdot_0_min, zdot_0_max,
-                                    (*traj_opt).GeneralizedVelocities()(0, 0));
+  // NOTE: qd_vars is of size (12, num_time_samples - 1)
+  // So we only constrain the first half of it initially.
+  const solvers::MatrixXDecisionVariable& qd_vars = (*traj_opt).GeneralizedVelocities();
+  (*traj_opt).AddBoundingBoxConstraint(qdot_0_min, qdot_0_max, qd_vars.block(0, 0, qdot_0_min.rows(), 1));
 
   // const int N = num_time_samples;
   // traj_opt.AddBoundingBoxConstraint(-10, -10,
@@ -63,22 +65,19 @@ void AddTrajectoryConstraints(ElasticContactImplicitDirectTranscription* traj_op
   // traj_opt.AddBoundingBoxConstraint(0, 0, traj_opt.ContactConstraintForces());
 
   // Add a constraint on the final posture.
-  (*traj_opt).AddBoundingBoxConstraint(
-      z_f - z_f_margin, z_f + z_f_margin,
-      (*traj_opt).GeneralizedPositions()(0, num_time_samples - 1));
+  (*traj_opt).AddBoundingBoxConstraint(q_f - q_f_margin, q_f + q_f_margin, q_vars.col(num_time_samples - 1));
 
   // Add a constraint on the final velocity.
   //traj_opt.AddBoundingBoxConstraint(
       //-15, -1, traj_opt.GeneralizedVelocities().col(0));
   // Add a running cost on the control as ∫ v² dt.
-  (*traj_opt).AddRunningCost(
-      (*traj_opt).GeneralizedVelocities().cast<symbolic::Expression>().squaredNorm());
+  //(*traj_opt).AddRunningCost(
+  //    (*traj_opt).GeneralizedVelocities().cast<symbolic::Expression>().squaredNorm());
   //(*traj_opt).AddCost(10*
-  //    (*traj_opt).GeneralizedVelocities()(0, 0) * 
-  //    (*traj_opt).GeneralizedVelocities()(0, 0));
-  //(*traj_opt).AddCost(100*
-  //    (*traj_opt).GeneralizedVelocities()(0, num_time_samples - 1) * 
-  //    (*traj_opt).GeneralizedVelocities()(0, num_time_samples - 1));
+  //    (*traj_opt).GeneralizedVelocities().transpose() * 
+  //    (*traj_opt).GeneralizedVelocities());
+  (*traj_opt).AddCost(
+      qd_vars.cast<symbolic::Expression>().block(0, num_time_samples - 1, qdot_0_min.rows(), 1).squaredNorm());
 
 
   // Add direct transcription constraints.
@@ -89,7 +88,7 @@ void CheckTrajectoryOutput(ElasticContactImplicitDirectTranscription *traj_opt,
                            const RigidBodyTree<double>& tree,
                            const int num_time_samples,
                            const double minimum_timestep, const double maximum_timestep,
-                           const double z_0) {
+                           Eigen::VectorXd q_0) {
   EXPECT_EQ(result, solvers::SolutionResult::kSolutionFound);
 
   const double tol{1e-4};
@@ -158,7 +157,7 @@ void CheckTrajectoryOutput(ElasticContactImplicitDirectTranscription *traj_opt,
   }
   // Check if the constraints on the initial state and final state are
   // satisfied.
-  EXPECT_NEAR(q_sol(0, 0), z_0, tol);
+  //EXPECT_NEAR(q_sol.col(0), q_0, tol);
   // EXPECT_NEAR(q_sol(0, num_time_samples - 1), z_f, tol);
   // EXPECT_TRUE(CompareMatrices(v_sol.col(num_time_samples - 1),
   //                             Eigen::VectorXd::Zero(tree->get_num_velocities()),
@@ -167,32 +166,37 @@ void CheckTrajectoryOutput(ElasticContactImplicitDirectTranscription *traj_opt,
 
 GTEST_TEST(ElasticContactImplicitDirectTranscription, TestContactImplicitBrick) {
   // Set up options for all optimizations.
-  const int num_time_samples = 11;
-  const double minimum_timestep{0.05};
+  const int num_time_samples = 4;
+  const double minimum_timestep{0.01};
   const double maximum_timestep{0.5};
 
-  const double z_0 = 10;
-  //const double z_f = 10;
-  const double z_f_margin = 0;
-  const double zdot_0_min = -25;
-  const double zdot_0_max = 25;
+  // Initial and Final Position Constraints
+  Eigen::VectorXd q_0(6);
+  q_0 << 0, 0, 10, 0, 0, 0;
+  Eigen::VectorXd q_f(6);
+  q_f << 0, 0, 1, 0, 0, 0;
+  Eigen::VectorXd q_f_margin(6);
+  q_f_margin << 0, 0, 0, 0, 0, 0;
+  Eigen::VectorXd qdot_0_min(6);
+  qdot_0_min << 0, 0, -25, 0, 0, 0;
+  Eigen::VectorXd qdot_0_max(6);
+  qdot_0_max << 0, 0, 25, 0, 0, 0;
 
   Eigen::MatrixXd initial_guess;
 
-  const std::vector<double> compl_slack_sequence = {1.0, 0.3, 0};
-  const std::vector<double> elasticity_sequence = {0.9, 0.5, 0.2};
+  const std::vector<double> compl_slack_sequence = {1.0, 0.1, 0.01, 0.001, 0};
+  const std::vector<double> elasticity_sequence = {0.5, 0.2};
 
   for (auto elasticity : elasticity_sequence) {
     std::cerr << "Using ELASTICITY: " << elasticity << std::endl;
-    double z_f;
     if (elasticity == 0.9) {
-      z_f = 9;
+      q_f(2) = 9;
     }
     else if (elasticity == 0.5) {
-      z_f = 5;
+      q_f(2) = 5;
     }
     else{
-      z_f = 2;
+      q_f(2) = 2;
     }
 
     initial_guess = Eigen::MatrixXd();
@@ -206,8 +210,8 @@ GTEST_TEST(ElasticContactImplicitDirectTranscription, TestContactImplicitBrick) 
           minimum_timestep, maximum_timestep, 24,
           compl_slack, elasticity);
       AddTrajectoryConstraints(&traj_opt, num_time_samples,
-                             z_0, z_f, z_f_margin,
-                             zdot_0_min, zdot_0_max);
+                             q_0, q_f, q_f_margin,
+                             qdot_0_min, qdot_0_max);
       if (initial_guess.rows() != 0) {
         traj_opt.SetInitialGuessForAllVariables(initial_guess);
       }
@@ -223,7 +227,7 @@ GTEST_TEST(ElasticContactImplicitDirectTranscription, TestContactImplicitBrick) 
       if (compl_slack == 0) {
         CheckTrajectoryOutput(&traj_opt, result,
                               *tree, num_time_samples,
-                              minimum_timestep, maximum_timestep, z_0);
+                              minimum_timestep, maximum_timestep, q_0);
       }
     }
   }

@@ -77,11 +77,9 @@
   </collision>
 </link>
 
-<joint name="height" type="prismatic">
+<joint name="motion" type="floating">
   <parent link="base" />
   <child link="contact_implicit_brick" />
-  <axis xyz="0 0 1" />
-  <origin xyz="0 0 0" />
 </joint>
 
 </robot>
