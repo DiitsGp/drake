@@ -230,7 +230,7 @@ GTEST_TEST(ElasticContactImplicitDirectTranscription, TestContactImplicitBrick) 
       drake::log()->info("Found trajectory with COMPL_SLACK: {}", compl_slack);
 
       initial_guess = traj_opt.GetSolution(traj_opt.decision_variables());
-      drake::log()->info("Solution:\ninitial_guess =\n\t{}", initial_guess.transpose());
+      //drake::log()->info("Solution:\ninitial_guess =\n\t{}", initial_guess.transpose());
       ASSERT_TRUE(initial_guess.array().isFinite().all());
 
       if (compl_slack == 0) {
